@@ -118,8 +118,10 @@ perl538.pkgs.toPerlModule (
       find $out/lib -type f | xargs sed -i \
         -e "/API2::APT/d" \
         -e "/ENV{'PATH'}/d" \
+        -e "s|/usr/share/pve-docs|${pve-docs}|" \
         -e "s|/usr/share/javascript|${pve-http-server}/share/javascript|" \
         -e "s|/usr/share/fonts-font-awesome|${pve-http-server}/share/fonts-font-awesome|" \
+        -e "s|/usr/share/fonts-font-logos|${pve-http-server}/share/fonts-font-logos|" \
         -e "s|/usr/share/pve-manager|$out/share/pve-manager|" \
         -e "s|/usr/share/zoneinfo|${tzdata}/share/zoneinfo|" \
         -e "s|/usr/share/pve-xtermjs|${pve-xtermjs}/share/pve-xtermjs|" \
