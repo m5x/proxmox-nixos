@@ -71,7 +71,7 @@ in
 
       services.openssh = {
         enable = true;
-        settings.AcceptEnv = "LANG LC_*";
+        settings.AcceptEnv = [ "LANG LC_*" ];
       };
       programs.ssh.extraConfig = ''
         Host *
