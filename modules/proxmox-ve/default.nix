@@ -71,7 +71,9 @@ in
 
       services.openssh = {
         enable = true;
-        settings.AcceptEnv = [ "LANG LC_*" ];
+        settings.AcceptEnv = if lib.versionOlder (lib.versions.majorMinor lib.version) "25.11"
+                             then "LANG LC_*"
+                             else [ "LANG LC_*" ];
       };
       programs.ssh.extraConfig = ''
         Host *
