@@ -39,6 +39,11 @@ stdenv.mkDerivation rec {
     cp api-viewer/APIViewer.js $out/share/javascript/proxmox-widget-toolkit
   '';
 
+  # https://github.com/tteck/Proxmox/blob/d07353534663f87186eceaf8c4a76ce9e886e0df/misc/post-pve-install.sh#L144
+  postFixup = ''
+    sed -i "/^ *checked_command:/,/^ *[a-zA-Z_]+:/{ s/status\.toLowerCase() !== 'active'/\0 \&\& false/ }" $out/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+  '';
+
   passthru.updateScript = pve-update-script { };
 
   meta = with lib; {
