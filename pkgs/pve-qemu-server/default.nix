@@ -2,31 +2,40 @@
   lib,
   stdenv,
   fetchgit,
-  perl540,
+  perl5,
   glib,
   json_c,
   pkgconf,
   libsysprof-capture,
   pcre2,
+  makeWrapper,
   proxmox-backup-client,
+  pve-apiclient,
+  pve-cluster,
+  pve-common,
   pve-edk2-firmware,
   pve-firewall,
+  pve-guest-common,
   pve-qemu,
+  pve-storage,
   util-linux,
   uuid,
   findbin,
   termreadline,
   socat,
+  conntrack-tools,
   vncterm,
   swtpm,
   libglvnd,
+  virtiofsd,
   pve-update-script,
   python3Packages,
 }:
 
 let
-  perlDeps = with perl540.pkgs; [
+  perlDeps = with perl5.pkgs; [
     CryptOpenSSLRandom
+    ClassMethodMaker
     DataDumper
     DigestSHA
     FilePath
@@ -40,7 +49,12 @@ let
     MIMEBase64
     NetSSLeay
     PathTools
+    pve-apiclient
+    pve-cluster
+    pve-common
     pve-firewall
+    pve-guest-common
+    pve-storage
     ScalarListUtils
     Socket
     Storable
@@ -53,18 +67,19 @@ let
     XMLLibXML
   ];
 
-  perlEnv = perl540.withPackages (_: perlDeps);
+  perlEnv = perl5.withPackages (_: perlDeps);
+  perlLibPath = lib.makeSearchPath "${perl5.libPrefix}/${perl5.version}" perlDeps;
 in
 
-perl540.pkgs.toPerlModule (
+perl5.pkgs.toPerlModule (
   stdenv.mkDerivation rec {
     pname = "pve-qemu-server";
-    version = "9.1.4";
+    version = "9.2.5";
 
     src = fetchgit {
       url = "git://git.proxmox.com/git/qemu-server.git";
-      rev = "29ea3d0c10b2cd8b426a0a2f8f4dd5c90929be39";
-      hash = "sha256-cxX+D2g9FayzI4zdYXe/924qedyKfOfD9+xJG+LvMxI=";
+      rev = "0f5055d88e1458117d7f716265285d28978a9d1d";
+      hash = "sha256-AyTLGJQvyxHN7oAcUO3dr8FNtM2aenZEQXtWXeZ2C8E=";
     };
 
     sourceRoot = "${src.name}/src";
@@ -81,17 +96,38 @@ perl540.pkgs.toPerlModule (
         -e "/modules-load.conf/d" \
         -e "s,usr/,,g"
 
+      # qmeventd should resolve qm from PATH instead of relying on /usr/sbin.
+      for file in $(grep -rl '/usr/sbin/qm' qmeventd bin PVE); do
+        sed -i -e 's!/usr/sbin/qm!qm!g' "$file"
+      done
+
       # Fix QEMU version check
       sed -i PVE/QemuServer/Helpers.pm -e "s/\[,\\\s\]//"
 
       # Fix libGL and libEGL detection
-      sed -i PVE/QemuServer.pm -e "s|/usr/lib/x86_64-linux-gnu/lib|${libglvnd}/lib/lib|"
+      substituteInPlace PVE/QemuServer.pm \
+        --replace-fail 'my $base = "/usr/lib/''${host_arch}-linux-gnu/lib";' \
+        'my $base = "${libglvnd}/lib/lib";'
+
+      # Fix Microsoft 2023 KEK cert path for `qm enroll-efi-keys`. Proxmox
+      # hardcodes the pre-2025 virt-firmware layout (matching Debian Trixie's
+      # v24.11), but nixpkgs ships virt-firmware >= 25.10 which moved the
+      # certs into a microsoft.com/ subdir with shorter names (upstream
+      # kraxel/virt-firmware@d2fb90a, 2025-03-17).
+      substituteInPlace PVE/QemuServer/OVMF.pm \
+        --replace-fail \
+          "'/usr/lib/python3/dist-packages/virt/firmware/certs/'" \
+          "'${python3Packages.virt-firmware}/${python3Packages.python.sitePackages}/virt/firmware/certs/microsoft.com/'" \
+        --replace-fail \
+          "'MicrosoftCorporationKEK2KCA2023.pem'" \
+          "'ms-kek-2023.pem'"
     '';
 
     buildInputs = [
       glib
       json_c
       pkgconf
+      makeWrapper
       perlEnv
       libsysprof-capture
       pcre2
@@ -101,9 +137,10 @@ perl540.pkgs.toPerlModule (
 
     dontBuild = true;
 
-    # Create missing SERVICEDIR
+    # Create missing dirs
     preInstall = ''
       mkdir -p $out/lib/systemd/system
+      mkdir -p $out/share/dbus-1/system.d
     '';
 
     installPhase = ''
@@ -115,12 +152,15 @@ perl540.pkgs.toPerlModule (
         PREFIX= \
         SBINDIR=/.bin \
         USRSHAREDIR=$out/share/qemu-server \
-        PERLDIR=/${perl540.libPrefix}/${perl540.version}
+        PERLDIR=/${perl5.libPrefix}/${perl5.version}
 
       runHook postInstall
     '';
 
     postFixup = ''
+      mv "$out"/usr/lib/systemd/system/* "$out/lib/systemd/system/"
+      mv "$out"/usr/share/dbus-1/system.d/* "$out/share/dbus-1/system.d/"
+
       find $out/lib $out/libexec -type f | xargs sed -i \
         -e "/ENV{'PATH'}/d" \
         -e "s|/usr/lib/qemu-server|$out/lib/qemu-server|" \
@@ -137,6 +177,7 @@ perl540.pkgs.toPerlModule (
         -e "s|/usr/share/pve-edk2-firmware|${pve-edk2-firmware}/usr/share/pve-edk2-firmware|" \
         -e 's|/etc/swtpm_setup.conf|${swtpm}/etc/swtpm_setup.conf|' \
         -e "s|virt-fw-vars|${python3Packages.virt-firmware}/bin/virt-fw-vars|g" \
+        -e "s|/usr/libexec/virtiofsd|${virtiofsd}/bin/virtiofsd|" \
         #-e "s|/usr/bin/proxmox-backup-client|${proxmox-backup-client}/bin/proxmox-backup-client|" \
         #-e "s|/usr/sbin/qm|$out/bin/qm|" \
         #-e "s|/usr/bin/qemu|${pve-qemu}/bin/qemu|" \
@@ -146,8 +187,25 @@ perl540.pkgs.toPerlModule (
         #-e "s|/usr/bin/vma||" \
         #-e "s|/usr/bin/pbs-restore||" \
 
+      find $out/lib/systemd/system -type f | xargs sed -i \
+        -e "s|/usr/libexec/qemu-server|$out/libexec/qemu-server|"
+
+      patchShebangs $out/.bin/
       patchShebangs $out/lib/
       patchShebangs $out/libexec/
+
+      find $out/.bin $out/libexec/qemu-server -type f -executable ! -name dbus-vmstate | while read -r bin; do
+        wrapProgram "$bin" \
+          --prefix PATH : ${lib.makeBinPath [ pve-qemu ]} \
+          --prefix PERL5LIB : $out/${perl5.libPrefix}/${perl5.version}:${perlLibPath}
+      done
+
+      wrapProgram $out/libexec/qemu-server/dbus-vmstate \
+        --prefix PATH : ${lib.makeBinPath [
+          conntrack-tools
+          pve-qemu
+        ]} \
+        --prefix PERL5LIB : $out/${perl5.libPrefix}/${perl5.version}:${perlLibPath}
     '';
 
     passthru.updateScript = pve-update-script {

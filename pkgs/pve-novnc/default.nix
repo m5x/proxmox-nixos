@@ -7,24 +7,23 @@
 
 novnc.overrideAttrs (old: rec {
   pname = "pve-novnc";
-  version = "1.6.0-3";
+  version = "1.7.0-2";
 
   src = fetchgit {
     url = "git://git.proxmox.com/git/novnc-pve.git";
-    rev = "3d6c1bf3ba8bb7bb2aba3a6757b69ff8633f3b5c";
-    hash = "sha256-uhyn8IOiyV72DL2USE2WUn5QDk4tVQiCx2VUaskTbGQ=";
+    rev = "10ddb6126aa4991e55d1ad7652b2b011254f5a36";
+    hash = "sha256-1S0JpZb5pTBFGUQ0tNg2oKLVs7Uc1vKVszzLstT2wLg=";
     fetchSubmodules = true;
   };
 
-  patches =
-    let
-      series = builtins.readFile "${src}/debian/patches/series";
-      patchList = builtins.filter (patch: builtins.isString patch && patch != "") (
-        builtins.split "\n" series
-      );
-      patchPathsList = map (patch: "${src}/debian/patches/${patch}") patchList;
-    in
-    old.patches ++ patchPathsList;
+  # Applied here to avoid IFD
+  postPatch = (old.postPatch or "") + ''
+    while IFS= read -r pvePatch; do
+      [ -n "$pvePatch" ] || continue
+      echo "applying $pvePatch"
+      patch -p1 < ${src}/debian/patches/"$pvePatch"
+    done < ${src}/debian/patches/series
+  '';
 
   sourceRoot = "${src.name}/novnc";
 

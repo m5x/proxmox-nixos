@@ -3,7 +3,50 @@
   ...
 }:
 let
-  callPackage = pkgs.lib.callPackageWith (pkgs // ours);
+  inherit (pkgs) lib;
+
+  # Nixpkgs builds libxcrypt with `--enable-hashes=strong`, which omits
+  # sha256crypt.
+  libxcrypt = pkgs.libxcrypt.overrideAttrs (old: {
+    configureFlags = map (
+      flag: if lib.hasPrefix "--enable-hashes=" flag then "${flag},sha256crypt" else flag
+    ) old.configureFlags;
+  });
+
+  perl5 = pkgs.perl5.override {
+    inherit libxcrypt;
+    self = perl5;
+    # XML::Twig 3.52 trips a "Possible precedence problem" warning on
+    # Perl 5.42, printed on stderr by every tool that loads it (pvesm,
+    # qm, ...). Storage migrations read the first line of `pvesm import`
+    # as the readiness handshake, so the warning breaks them.
+    overrides =
+      p:
+      let
+        patched = p.overrideScope (
+          _: prev: {
+            XMLTwig = prev.XMLTwig.overrideAttrs (old: {
+              patchFlags = [
+                "-p1"
+                "--ignore-whitespace"
+              ];
+              patches = (old.patches or [ ]) ++ [
+                (pkgs.fetchpatch {
+                  name = "xml-twig-rt155759-precedence.patch";
+                  url = "https://github.com/mirod/xmltwig/commit/a7b67cf9a7ae2db53ba564e9326dcabccefda4c6.patch";
+                  hash = "sha256-i8Ke6vx3aL8uvv/VaZlbZgvDb408n7WfSqtLaRnSavA=";
+                })
+              ];
+            });
+          }
+        );
+      in
+      {
+        inherit (patched) XMLTwig NetDBus;
+      };
+  };
+
+  callPackage = pkgs.lib.callPackageWith (pkgs // { inherit perl5; } // ours);
 
   ours = {
     authenpam = callPackage ./perl-modules/authenpam { };
@@ -22,7 +65,7 @@ let
 
     extjs = callPackage ./extjs { };
     fonts-font-logos = callPackage ./fonts-font-logos { };
-    
+
     markedjs = callPackage ./markedjs { };
     qrcodejs = callPackage ./qrcodejs { };
     perlmod = callPackage ./perlmod { };

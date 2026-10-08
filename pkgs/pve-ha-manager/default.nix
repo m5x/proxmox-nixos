@@ -3,7 +3,8 @@
   stdenv,
   fetchgit,
   makeWrapper,
-  perl540,
+  iproute2,
+  perl5,
   pve-container,
   pve-firewall,
   pve-guest-common,
@@ -15,25 +16,27 @@
 }:
 
 let
+  pve-storage_ = pve-storage.override { inherit enableLinstor; };
   perlDeps = [
     pve-container
     pve-firewall
     pve-guest-common
-    pve-qemu-server
-    (pve-storage.override { inherit enableLinstor; })
+    (pve-qemu-server.override { pve-storage = pve-storage_; })
+    pve-storage_
   ];
-  perlEnv = perl540.withPackages (_: perlDeps);
+  perlEnv = perl5.withPackages (_: perlDeps);
+  perlLibPath = lib.makeSearchPath "${perl5.libPrefix}/${perl5.version}" perlDeps;
 in
 
-perl540.pkgs.toPerlModule (
+perl5.pkgs.toPerlModule (
   stdenv.mkDerivation rec {
     pname = "pve-ha-manager";
-    version = "5.1.1";
+    version = "5.2.5";
 
     src = fetchgit {
       url = "git://git.proxmox.com/git/${pname}.git";
-      rev = "1a8d8bcef1934a43d37344caf965c082e55d451c";
-      hash = "sha256-3QcgqBrHgAb7+iZHZ2hltH/hDABQTH8lCxp/fsYKbH0=";
+      rev = "c73364c19d5317e6df5bb1c1b727d080a5e897ef";
+      hash = "sha256-iWfC3GF5jx865QsSQtkoCqEIeDD33BcP5TO88RRiEro=";
     };
 
     sourceRoot = "${src.name}/src";
@@ -53,7 +56,7 @@ perl540.pkgs.toPerlModule (
       "DESTDIR=$(out)"
       "PREFIX="
       "SBINDIR=/bin"
-      "PERLDIR=/${perl540.libPrefix}/${perl540.version}"
+      "PERLDIR=/${perl5.libPrefix}/${perl5.version}"
     ];
 
     buildInputs = [
@@ -71,9 +74,12 @@ perl540.pkgs.toPerlModule (
     postFixup = ''
       for bin in $out/bin/*; do
         wrapProgram $bin \
-          --prefix PATH : ${lib.makeBinPath [ pve-qemu ]} \
-          --prefix PERL5LIB : $out/${perl540.libPrefix}/${perl540.version}
-      done      
+          --prefix PATH : "$out/bin:${lib.makeBinPath [
+            pve-qemu
+            iproute2
+          ]}" \
+          --prefix PERL5LIB : $out/${perl5.libPrefix}/${perl5.version}:${perlLibPath}
+      done
     '';
 
     passthru.updateScript = pve-update-script { };
