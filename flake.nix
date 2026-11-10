@@ -27,6 +27,7 @@
         [
           "x86_64-linux"
           "aarch64-linux"
+          "riscv64-linux"
           "x86_64-darwin"
           "aarch64-darwin"
         ]
@@ -37,7 +38,33 @@
               inherit system;
               overlays = [
                 self.overlays.${system}
-                (_: _: { inherit (nixpkgs-libvncserver.legacyPackages.${system}) libvncserver; })
+                (_: _: {
+                  inherit
+                    (import nixpkgs-libvncserver (
+                      {
+                        inherit system;
+                      }
+                      // nixpkgs-stable.lib.optionalAttrs (system == "riscv64-linux") {
+                        overlays = [
+                          (_: p: {
+                            git = p.git.overrideAttrs (_: {
+                              doInstallCheck = false;
+                            });
+                          })
+                        ];
+                      }
+                    ))
+                    libvncserver
+                    ;
+                })
+                (_: prev: {
+                  binaryen = prev.binaryen.overrideAttrs (
+                    old:
+                    nixpkgs-stable.lib.optionalAttrs (system == "riscv64-linux") {
+                      doCheck = false;
+                    }
+                  );
+                })
               ];
             };
           in

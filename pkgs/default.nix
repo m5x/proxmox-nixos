@@ -16,51 +16,15 @@ let
   perl5 = pkgs.perl5.override {
     inherit libxcrypt;
     self = perl5;
-    # XML::Twig 3.52 trips a "Possible precedence problem" warning on
-    # Perl 5.42, printed on stderr by every tool that loads it (pvesm,
-    # qm, ...). Storage migrations read the first line of `pvesm import`
-    # as the readiness handshake, so the warning breaks them.
-    overrides =
-      p:
-      let
-        patched = p.overrideScope (
-          _: prev: {
-            XMLTwig = prev.XMLTwig.overrideAttrs (old: {
-              patchFlags = [
-                "-p1"
-                "--ignore-whitespace"
-              ];
-              patches = (old.patches or [ ]) ++ [
-                (pkgs.fetchpatch {
-                  name = "xml-twig-rt155759-precedence.patch";
-                  url = "https://github.com/mirod/xmltwig/commit/a7b67cf9a7ae2db53ba564e9326dcabccefda4c6.patch";
-                  hash = "sha256-i8Ke6vx3aL8uvv/VaZlbZgvDb408n7WfSqtLaRnSavA=";
-                })
-              ];
-            });
-          }
-        );
-      in
-      {
-        inherit (patched) XMLTwig NetDBus;
-      };
   };
 
   callPackage = pkgs.lib.callPackageWith (pkgs // { inherit perl5; } // ours);
 
   ours = {
     authenpam = callPackage ./perl-modules/authenpam { };
-    datadumper = callPackage ./perl-modules/datadumper { };
-    digestsha = callPackage ./perl-modules/digestsha { };
-    findbin = callPackage ./perl-modules/findbin { };
-    iosocketip = callPackage ./perl-modules/iosocketip { };
     mimebase32 = callPackage ./perl-modules/mimebase32 { };
-    mimebase64 = callPackage ./perl-modules/mimebase64 { };
     netsubnet = callPackage ./perl-modules/netsubnet { };
     posixstrptime = callPackage ./perl-modules/posixstrptime { };
-    socket = callPackage ./perl-modules/socket { };
-    termreadline = callPackage ./perl-modules/termreadline { };
-    testharness = callPackage ./perl-modules/testharness { };
     uuid = callPackage ./perl-modules/uuid { };
 
     extjs = callPackage ./extjs { };
